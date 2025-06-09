@@ -2,9 +2,9 @@
   "name": "opcua-simple-ui",
   "version": "1.0.0",
   "description": "Simple OPC UA Web UI",
-  "main": "server.js",
+  "main": "web_monitor_server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node web_monitor_server.js"
   },
   "dependencies": {
     "express": "^4.18.2",

@@ -69,9 +69,10 @@ http://localhost:3000
 client-server/
 ├── myserver/
 │   ├── client_server_server.js    # 4개 가상장비 OPC UA 서버
+│   ├── pub_sub_server.js          # PubSub 실험용 서버 (미사용)
 │   └── package.json               # OPC UA 의존성
 └── web-ui/
-    ├── server.js                  # Express 웹 서버
+    ├── web_monitor_server.js      # Express 웹 서버
     ├── public/
     │   └── index.html            # 카드형 모니터링 UI
     └── package.json              # 웹 서버 의존성
