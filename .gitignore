@@ -1,0 +1,47 @@
+# Node.js 관련
+node_modules/
+npm-debug.log
+yarn-error.log
+yarn.lock
+package-lock.json
+
+# 환경 변수 및 민감한 정보
+.env
+*.env
+*.env.*
+
+# 로그 파일
+*.log
+logs/
+*.log.*
+
+# 임시 파일 및 캐시
+.DS_Store
+*.swp
+*.swo
+*.tmp
+temp/
+tmp/
+
+# 빌드 및 번들 파일
+dist/
+build/
+
+# 테스트 및 커버리지
+coverage/
+*.test
+*.spec
+
+# IDE 및 편집기 설정
+.vscode/
+.idea/
+*.sublime-*
+
+# 프로덕션에서 생성되는 데이터
+*.pid
+*.seed
+*.dat
+
+# 기타
+*.bak
+*.backup
