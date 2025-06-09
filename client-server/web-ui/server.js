@@ -54,54 +54,110 @@ app.get('/api/variables', async (req, res) => {
     if (!session || !isConnected) {
         return res.json({
             error: 'OPC UA 서버에 연결되지 않았습니다.',
-            variables: []
+            devices: []
         });
     }
 
     try {
-        const variables = [
-            { nodeId: "ns=1;s=MyVariable1", name: "MyVariable1", type: "Double", writable: false },
-            { nodeId: "ns=1;b=1020FFAA", name: "MyVariable2", type: "String", writable: true },
-            { nodeId: "ns=1;s=free_memory", name: "FreeMemory", type: "Double", writable: false },
-            { nodeId: "ns=1;s=process_name", name: "ProcessName", type: "Float", writable: false }
+        // 4개 장비의 16개 변수 정의
+        const deviceConfigs = [
+            { name: "Device1", displayName: "가상장비 1" },
+            { name: "Device2", displayName: "가상장비 2" },
+            { name: "Device3", displayName: "가상장비 3" },
+            { name: "Device4", displayName: "가상장비 4" }
         ];
 
-        const results = [];
+        const devices = [];
         
-        for (const variable of variables) {
-            try {
-                const dataValue = await session.read({
-                    nodeId: variable.nodeId,
-                    attributeId: AttributeIds.Value
-                });
-                
-                results.push({
-                    ...variable,
-                    value: dataValue.value.value,
-                    timestamp: new Date().toLocaleString(),
-                    quality: dataValue.statusCode.name || 'Good'
-                });
-            } catch (error) {
-                results.push({
-                    ...variable,
-                    value: 'Error',
-                    timestamp: new Date().toLocaleString(),
-                    quality: 'Bad'
-                });
+        for (const deviceConfig of deviceConfigs) {
+            const deviceName = deviceConfig.name;
+            const variables = [
+                { 
+                    nodeId: `ns=1;s=${deviceName}_Temperature`, 
+                    name: "Temperature", 
+                    displayName: "온도 (°C)",
+                    type: "Double", 
+                    writable: false,
+                    unit: "°C"
+                },
+                { 
+                    nodeId: `ns=1;s=${deviceName}_Power`, 
+                    name: "Power", 
+                    displayName: "작동상태",
+                    type: "Boolean", 
+                    writable: true,
+                    unit: ""
+                },
+                { 
+                    nodeId: `ns=1;s=${deviceName}_Voltage`, 
+                    name: "Voltage", 
+                    displayName: "전압 (V)",
+                    type: "Double", 
+                    writable: false,
+                    unit: "V"
+                },
+                { 
+                    nodeId: `ns=1;s=${deviceName}_Current`, 
+                    name: "Current", 
+                    displayName: "전류 (A)",
+                    type: "Double", 
+                    writable: false,
+                    unit: "A"
+                }
+            ];
+
+            const deviceData = {
+                name: deviceName,
+                displayName: deviceConfig.displayName,
+                variables: []
+            };
+
+            for (const variable of variables) {
+                try {
+                    const dataValue = await session.read({
+                        nodeId: variable.nodeId,
+                        attributeId: AttributeIds.Value
+                    });
+                    
+                    let displayValue = dataValue.value.value;
+                    if (variable.type === "Boolean") {
+                        displayValue = displayValue ? "ON" : "OFF";
+                    } else if (variable.type === "Double") {
+                        displayValue = typeof displayValue === 'number' ? displayValue.toFixed(1) : displayValue;
+                    }
+                    
+                    deviceData.variables.push({
+                        ...variable,
+                        value: dataValue.value.value,
+                        displayValue: displayValue,
+                        timestamp: new Date().toLocaleString(),
+                        quality: dataValue.statusCode.name || 'Good'
+                    });
+                } catch (error) {
+                    deviceData.variables.push({
+                        ...variable,
+                        value: 'Error',
+                        displayValue: 'Error',
+                        timestamp: new Date().toLocaleString(),
+                        quality: 'Bad'
+                    });
+                }
             }
+
+            devices.push(deviceData);
         }
 
-        res.json({ variables: results });
+        res.json({ devices: devices });
         
     } catch (error) {
         res.json({
             error: error.message,
-            variables: []
+            devices: []
         });
     }
 });
 
-// API: 변수 쓰기
+// API: 변수 쓰기 (작동상태 제어)
 app.post('/api/write', async (req, res) => {
     if (!session || !isConnected) {
         return res.json({ 
@@ -114,7 +170,11 @@ app.post('/api/write', async (req, res) => {
 
     try {
         let variant;
-        if (dataType === 'String') {
+        if (dataType === 'Boolean') {
+            // "ON"/"OFF" 문자열 또는 true/false 불린값 처리
+            const boolValue = (value === "ON" || value === true || value === "true");
+            variant = new Variant({ dataType: DataType.Boolean, value: boolValue });
+        } else if (dataType === 'String') {
             variant = new Variant({ dataType: DataType.String, value: String(value) });
         } else if (dataType === 'Double') {
             variant = new Variant({ dataType: DataType.Double, value: Number(value) });
@@ -133,9 +193,10 @@ app.post('/api/write', async (req, res) => {
         const result = await session.write(writeValue);
         
         if (result.name === 'Good') {
+            const displayValue = dataType === 'Boolean' ? (variant.value ? "ON" : "OFF") : value;
             res.json({ 
                 success: true, 
-                message: `${nodeId} 값이 ${value}로 변경되었습니다.` 
+                message: `장비 ${nodeId.split('_')[0].replace('ns=1;s=', '')}의 작동상태가 ${displayValue}로 변경되었습니다.` 
             });
         } else {
             res.json({ 

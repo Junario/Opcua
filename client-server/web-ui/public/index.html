@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>간단한 OPC UA 모니터링</title>
+    <title>4개 가상장비 OPC UA 모니터링</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 50px auto;
+            max-width: 1400px;
+            margin: 20px auto;
             padding: 20px;
             background-color: #f5f5f5;
         }
@@ -17,134 +17,221 @@
             text-align: center;
             margin-bottom: 30px;
         }
+
+        .header h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #7f8c8d;
+            font-size: 1.1em;
+        }
         
         .status {
-            padding: 10px;
-            margin-bottom: 20px;
-            border-radius: 5px;
+            padding: 12px;
+            margin-bottom: 25px;
+            border-radius: 8px;
             font-weight: bold;
+            text-align: center;
+            font-size: 1.1em;
         }
         
         .status.connected {
             background-color: #d4edda;
             color: #155724;
-            border: 1px solid #c3e6cb;
+            border: 2px solid #c3e6cb;
         }
         
         .status.disconnected {
             background-color: #f8d7da;
             color: #721c24;
-            border: 1px solid #f5c6cb;
+            border: 2px solid #f5c6cb;
         }
         
-        .controls {
+        .update-controls {
             background: white;
             padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-radius: 12px;
+            margin-bottom: 25px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
         }
-        
-        .controls h3 {
-            margin-top: 0;
-            color: #333;
-        }
-        
+
         .control-group {
-            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
-        
-        .control-group label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: bold;
+
+        .control-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            transition: all 0.2s;
         }
-        
-        .control-group input {
-            width: 200px;
-            padding: 8px;
+
+        .control-btn.pause {
+            background-color: #ffc107;
+            color: #212529;
+        }
+
+        .control-btn.play {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .control-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+
+        .interval-selector select {
+            padding: 8px 12px;
             border: 1px solid #ddd;
             border-radius: 4px;
+            font-size: 1rem;
         }
-        
-        .control-group button {
-            padding: 8px 15px;
+
+        .refresh-btn {
             background-color: #007bff;
             color: white;
             border: none;
-            border-radius: 4px;
+            padding: 10px 20px;
+            border-radius: 6px;
             cursor: pointer;
-            margin-left: 10px;
+            font-weight: 600;
+            transition: all 0.2s;
         }
-        
-        .control-group button:hover {
+
+        .refresh-btn:hover {
             background-color: #0056b3;
+            transform: translateY(-1px);
         }
-        
-        .variables {
+
+        .devices-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 25px;
+            margin-bottom: 25px;
+        }
+
+        .device-card {
             background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
             overflow: hidden;
+            transition: transform 0.2s;
         }
-        
-        .variables h3 {
+
+        .device-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }
+
+        .device-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .device-header h3 {
             margin: 0;
-            padding: 15px 20px;
-            background-color: #f8f9fa;
-            border-bottom: 1px solid #dee2e6;
-            color: #333;
+            font-size: 1.4em;
+            font-weight: 600;
         }
-        
-        table {
-            width: 100%;
-            border-collapse: collapse;
+
+        .device-variables {
+            padding: 20px;
         }
-        
-        th, td {
-            padding: 12px 20px;
-            text-align: left;
-            border-bottom: 1px solid #dee2e6;
+
+        .variable-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #f1f3f4;
         }
-        
-        th {
-            background-color: #f8f9fa;
-            font-weight: bold;
-            color: #495057;
+
+        .variable-row:last-child {
+            border-bottom: none;
         }
-        
-        .value {
+
+        .variable-name {
+            font-weight: 600;
+            color: #2c3e50;
+            flex: 1;
+        }
+
+        .variable-value {
             font-family: 'Courier New', monospace;
             font-weight: bold;
+            font-size: 1.1em;
+            color: #27ae60;
+            flex: 1;
+            text-align: center;
         }
-        
-        .quality-good {
-            color: #28a745;
+
+        .variable-control {
+            flex: 1;
+            text-align: right;
         }
-        
-        .quality-bad {
-            color: #dc3545;
+
+        .power-control {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
         }
-        
-        .refresh-btn {
+
+        .power-btn {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .power-btn.on {
             background-color: #28a745;
             color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            margin-bottom: 20px;
         }
-        
-        .refresh-btn:hover {
-            background-color: #218838;
+
+        .power-btn.off {
+            background-color: #dc3545;
+            color: white;
         }
-        
+
+        .power-btn:hover {
+            opacity: 0.8;
+            transform: scale(1.05);
+        }
+
+        .value-on {
+            color: #28a745 !important;
+            font-weight: bold;
+        }
+
+        .value-off {
+            color: #dc3545 !important;
+            font-weight: bold;
+        }
+
         .message {
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 4px;
+            padding: 12px;
+            margin: 15px 0;
+            border-radius: 6px;
             display: none;
+            text-align: center;
+            font-weight: 500;
         }
         
         .message.success {
@@ -159,364 +246,276 @@
             border: 1px solid #f5c6cb;
         }
 
-        .update-controls {
+        .timestamp {
+            text-align: center;
+            color: #6c757d;
+            font-style: italic;
+            margin-top: 20px;
+            padding: 10px;
             background: white;
-            padding: 15px 20px;
             border-radius: 8px;
-            margin-bottom: 20px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            flex-wrap: wrap;
         }
 
-        .control-btn {
-            padding: 8px 15px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.9rem;
-            font-weight: 500;
-        }
-
-        .control-btn.pause {
-            background-color: #ffc107;
-            color: #212529;
-        }
-
-        .control-btn.play {
-            background-color: #28a745;
-            color: white;
-        }
-
-        .control-btn:hover {
-            opacity: 0.8;
-        }
-
-        .interval-selector {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .interval-selector select {
-            padding: 6px 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 0.9rem;
-        }
-
-        .status-info {
-            font-size: 0.9rem;
-            color: #666;
-            margin-left: auto;
-        }
-
-        .last-update {
-            font-weight: bold;
-            color: #28a745;
+        /* 반응형 디자인 */
+        @media (max-width: 768px) {
+            .devices-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .update-controls {
+                flex-direction: column;
+                gap: 15px;
+            }
+            
+            .control-group {
+                justify-content: center;
+            }
         }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>OPC UA 간단 모니터링</h1>
-        <div id="status" class="status disconnected">연결 확인 중...</div>
+        <h1>🏭 4개 가상장비 OPC UA 모니터링</h1>
+        <p>실시간 온도, 작동상태, 전압, 전류 모니터링 및 제어</p>
     </div>
 
-    <div class="controls">
-        <h3>변수 제어</h3>
-        <div class="control-group">
-            <label for="myVariable2Input">MyVariable2 (문자열):</label>
-            <input type="text" id="myVariable2Input" placeholder="새 값 입력...">
-            <button onclick="writeVariable()">값 변경</button>
-        </div>
-        <div id="writeMessage" class="message"></div>
+    <div id="status" class="status disconnected">
+        🔴 OPC UA 서버에 연결 중...
     </div>
 
     <div class="update-controls">
-        <button class="refresh-btn" onclick="loadVariables()">🔄 새로고침</button>
-        
-        <button id="autoUpdateToggle" class="control-btn pause" onclick="toggleAutoUpdate()">
-            ⏸️ 자동 업데이트 중지
-        </button>
-        
-        <div class="interval-selector">
-            <label for="intervalSelect">업데이트 간격:</label>
-            <select id="intervalSelect" onchange="changeUpdateInterval(this.value)">
-                <option value="1000">1초</option>
-                <option value="2000" selected>2초</option>
-                <option value="3000">3초</option>
-                <option value="5000">5초</option>
-                <option value="10000">10초</option>
-            </select>
+        <div class="control-group">
+            <label>업데이트 간격:</label>
+            <div class="interval-selector">
+                <select id="updateInterval">
+                    <option value="1000">1초</option>
+                    <option value="2000" selected>2초</option>
+                    <option value="3000">3초</option>
+                    <option value="5000">5초</option>
+                    <option value="10000">10초</option>
+                </select>
+            </div>
         </div>
-        
-        <div class="status-info">
-            <span>마지막 업데이트: </span>
-            <span id="lastUpdateTime" class="last-update">-</span>
+        <div class="control-group">
+            <button id="toggleUpdate" class="control-btn pause">⏸️ 자동 업데이트 중지</button>
+        </div>
+        <div class="control-group">
+            <button id="manualRefresh" class="refresh-btn">🔄 수동 새로고침</button>
         </div>
     </div>
 
-    <div class="variables">
-        <h3>변수 현황</h3>
-        <table>
-            <thead>
-                <tr>
-                    <th>변수명</th>
-                    <th>값</th>
-                    <th>타입</th>
-                    <th>품질</th>
-                    <th>업데이트 시간</th>
-                    <th>쓰기</th>
-                </tr>
-            </thead>
-            <tbody id="variablesTable">
-                <tr>
-                    <td colspan="6" style="text-align: center; color: #666;">데이터를 불러오는 중...</td>
-                </tr>
-            </tbody>
-        </table>
+    <div id="message" class="message"></div>
+
+    <div id="devicesContainer" class="devices-grid">
+        <!-- 장비 카드들이 여기에 동적으로 생성됩니다 -->
+    </div>
+
+    <div id="lastUpdate" class="timestamp">
+        마지막 업데이트: 대기 중...
     </div>
 
     <script>
-        let isConnected = false;
-
-        // 업데이트 간격 설정 (밀리초)
-        let updateInterval = 2000; // 2초마다 업데이트
-        let statusInterval = 5000; // 5초마다 상태 확인
-        let autoUpdateEnabled = true;
+        let updateInterval = 2000;
+        let isAutoUpdate = true;
         let updateTimer = null;
-        let statusTimer = null;
 
-        // 페이지 로드 시 초기화
-        window.onload = function() {
-            checkStatus();
-            loadVariables();
-            startAutoUpdate();
-        };
-
-        // 자동 업데이트 시작
-        function startAutoUpdate() {
-            if (updateTimer) clearInterval(updateTimer);
-            if (statusTimer) clearInterval(statusTimer);
-            
-            if (autoUpdateEnabled) {
-                updateTimer = setInterval(loadVariables, updateInterval);
-                statusTimer = setInterval(checkStatus, statusInterval);
-            }
-        }
-
-        // 자동 업데이트 중지
-        function stopAutoUpdate() {
-            if (updateTimer) clearInterval(updateTimer);
-            if (statusTimer) clearInterval(statusTimer);
-            updateTimer = null;
-            statusTimer = null;
-        }
-
-        // 업데이트 간격 변경
-        function changeUpdateInterval(newInterval) {
-            updateInterval = newInterval;
-            if (autoUpdateEnabled) {
-                startAutoUpdate();
-            }
-        }
-
-        // 자동 업데이트 토글
-        function toggleAutoUpdate() {
-            autoUpdateEnabled = !autoUpdateEnabled;
-            const toggleBtn = document.getElementById('autoUpdateToggle');
-            
-            if (autoUpdateEnabled) {
-                startAutoUpdate();
-                toggleBtn.textContent = '⏸️ 자동 업데이트 중지';
-                toggleBtn.className = 'control-btn pause';
-            } else {
-                stopAutoUpdate();
-                toggleBtn.textContent = '▶️ 자동 업데이트 시작';
-                toggleBtn.className = 'control-btn play';
-            }
-        }
+        // DOM 요소들
+        const statusEl = document.getElementById('status');
+        const messageEl = document.getElementById('message');
+        const devicesContainer = document.getElementById('devicesContainer');
+        const lastUpdateEl = document.getElementById('lastUpdate');
+        const updateIntervalSelect = document.getElementById('updateInterval');
+        const toggleUpdateBtn = document.getElementById('toggleUpdate');
+        const manualRefreshBtn = document.getElementById('manualRefresh');
 
         // 연결 상태 확인
         async function checkStatus() {
             try {
                 const response = await fetch('/api/status');
                 const data = await response.json();
-                isConnected = data.connected;
                 
-                const statusElement = document.getElementById('status');
-                if (isConnected) {
-                    statusElement.className = 'status connected';
-                    statusElement.textContent = '✅ OPC UA 서버 연결됨';
+                if (data.connected) {
+                    statusEl.textContent = '🟢 OPC UA 서버 연결됨';
+                    statusEl.className = 'status connected';
                 } else {
-                    statusElement.className = 'status disconnected';
-                    statusElement.textContent = '❌ OPC UA 서버 연결 안됨';
+                    statusEl.textContent = '🔴 OPC UA 서버 연결 안됨';
+                    statusEl.className = 'status disconnected';
                 }
             } catch (error) {
-                const statusElement = document.getElementById('status');
-                statusElement.className = 'status disconnected';
-                statusElement.textContent = '❌ 웹서버 연결 오류';
+                statusEl.textContent = '🔴 웹 서버 연결 실패';
+                statusEl.className = 'status disconnected';
             }
         }
 
-        // 변수 데이터 로드
-        async function loadVariables() {
+        // 장비 데이터 로드
+        async function loadDevices() {
             try {
                 const response = await fetch('/api/variables');
                 const data = await response.json();
-                
-                // 마지막 업데이트 시간 표시
-                updateLastUpdateTime();
-                
-                const tbody = document.getElementById('variablesTable');
-                
+
                 if (data.error) {
-                    tbody.innerHTML = `
-                        <tr>
-                            <td colspan="6" style="text-align: center; color: #dc3545;">
-                                ${data.error}
-                            </td>
-                        </tr>
-                    `;
+                    showMessage(data.error, 'error');
+                    devicesContainer.innerHTML = '<div style="text-align: center; color: #dc3545; padding: 40px;">데이터를 불러올 수 없습니다.</div>';
                     return;
                 }
-                
-                if (!data.variables || data.variables.length === 0) {
-                    tbody.innerHTML = `
-                        <tr>
-                            <td colspan="6" style="text-align: center; color: #666;">
-                                변수 데이터가 없습니다.
-                            </td>
-                        </tr>
-                    `;
-                    return;
-                }
-                
-                tbody.innerHTML = data.variables.map(variable => `
-                    <tr>
-                        <td><strong>${variable.name}</strong></td>
-                        <td class="value">${formatValue(variable.value, variable.type)}</td>
-                        <td>${variable.type}</td>
-                        <td class="quality-${variable.quality.toLowerCase() === 'good' ? 'good' : 'bad'}">
-                            ${variable.quality}
-                        </td>
-                        <td>${variable.timestamp}</td>
-                        <td>${variable.writable ? '가능' : '불가'}</td>
-                    </tr>
-                `).join('');
+
+                renderDevices(data.devices);
+                lastUpdateEl.textContent = `마지막 업데이트: ${new Date().toLocaleString()}`;
                 
             } catch (error) {
-                console.error('변수 로드 오류:', error);
-                document.getElementById('variablesTable').innerHTML = `
-                    <tr>
-                        <td colspan="6" style="text-align: center; color: #dc3545;">
-                            네트워크 오류: ${error.message}
-                        </td>
-                    </tr>
+                showMessage(`데이터 로드 오류: ${error.message}`, 'error');
+                console.error('Error loading devices:', error);
+            }
+        }
+
+        // 장비 UI 렌더링
+        function renderDevices(devices) {
+            devicesContainer.innerHTML = '';
+
+            devices.forEach(device => {
+                const deviceCard = document.createElement('div');
+                deviceCard.className = 'device-card';
+                
+                const powerVar = device.variables.find(v => v.name === 'Power');
+                const isPowerOn = powerVar && powerVar.value === true;
+                
+                deviceCard.innerHTML = `
+                    <div class="device-header">
+                        <h3>${device.displayName}</h3>
+                    </div>
+                    <div class="device-variables">
+                        ${device.variables.map(variable => `
+                            <div class="variable-row">
+                                <div class="variable-name">${variable.displayName}</div>
+                                <div class="variable-value ${variable.name === 'Power' ? (variable.value ? 'value-on' : 'value-off') : ''}">
+                                    ${variable.displayValue}${variable.unit}
+                                </div>
+                                <div class="variable-control">
+                                    ${variable.writable && variable.name === 'Power' ? `
+                                        <div class="power-control">
+                                            <button class="power-btn on ${variable.value ? 'active' : ''}" 
+                                                    onclick="setPowerState('${variable.nodeId}', true)">ON</button>
+                                            <button class="power-btn off ${!variable.value ? 'active' : ''}" 
+                                                    onclick="setPowerState('${variable.nodeId}', false)">OFF</button>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
                 `;
-            }
+                
+                devicesContainer.appendChild(deviceCard);
+            });
         }
 
-        // 값 포맷팅
-        function formatValue(value, type) {
-            if (value === null || value === undefined) {
-                return 'N/A';
-            }
-            
-            if (type === 'Double' || type === 'Float') {
-                return Number(value).toFixed(2);
-            }
-            
-            return value.toString();
-        }
-
-        // 변수 쓰기
-        async function writeVariable() {
-            const input = document.getElementById('myVariable2Input');
-            const messageDiv = document.getElementById('writeMessage');
-            const value = input.value.trim();
-            
-            if (!value) {
-                showMessage('값을 입력해주세요.', 'error');
-                return;
-            }
-            
-            if (!isConnected) {
-                showMessage('OPC UA 서버에 연결되지 않았습니다.', 'error');
-                return;
-            }
-            
+        // 작동상태 제어
+        async function setPowerState(nodeId, powerState) {
             try {
                 const response = await fetch('/api/write', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
                     body: JSON.stringify({
-                        nodeId: 'ns=1;b=1020FFAA',
-                        value: value,
-                        dataType: 'String'
+                        nodeId: nodeId,
+                        value: powerState,
+                        dataType: 'Boolean'
                     })
                 });
-                
+
                 const result = await response.json();
                 
                 if (result.success) {
                     showMessage(result.message, 'success');
-                    input.value = '';
-                    // 즉시 새로고침
-                    loadVariables();
+                    // 즉시 새로고침하여 변경사항 반영
+                    setTimeout(loadDevices, 500);
                 } else {
                     showMessage(result.message, 'error');
                 }
                 
             } catch (error) {
-                showMessage(`네트워크 오류: ${error.message}`, 'error');
+                showMessage(`제어 실패: ${error.message}`, 'error');
+                console.error('Error setting power state:', error);
             }
         }
 
         // 메시지 표시
-        function showMessage(message, type) {
-            const messageDiv = document.getElementById('writeMessage');
-            messageDiv.textContent = message;
-            messageDiv.className = `message ${type}`;
-            messageDiv.style.display = 'block';
+        function showMessage(text, type) {
+            messageEl.textContent = text;
+            messageEl.className = `message ${type}`;
+            messageEl.style.display = 'block';
             
-            // 5초 후 메시지 숨김
             setTimeout(() => {
-                messageDiv.style.display = 'none';
-            }, 5000);
+                messageEl.style.display = 'none';
+            }, 3000);
         }
 
-        // 마지막 업데이트 시간 표시
-        function updateLastUpdateTime() {
-            const now = new Date();
-            const timeString = now.toLocaleTimeString();
-            const lastUpdateElement = document.getElementById('lastUpdateTime');
-            if (lastUpdateElement) {
-                lastUpdateElement.textContent = timeString;
+        // 자동 업데이트 관리
+        function startAutoUpdate() {
+            if (updateTimer) {
+                clearInterval(updateTimer);
+            }
+            
+            if (isAutoUpdate) {
+                updateTimer = setInterval(() => {
+                    if (!document.hidden) {
+                        loadDevices();
+                    }
+                }, updateInterval);
             }
         }
 
-        // 페이지 가시성 변경 시 자동 업데이트 제어
-        document.addEventListener('visibilitychange', function() {
-            if (document.hidden) {
-                // 페이지가 숨겨지면 업데이트 간격을 늘림
-                if (autoUpdateEnabled && updateInterval < 10000) {
-                    changeUpdateInterval(10000);
-                }
-            } else {
-                // 페이지가 다시 보이면 원래 간격으로 복원
-                const selectedInterval = document.getElementById('intervalSelect').value;
-                changeUpdateInterval(parseInt(selectedInterval));
+        // 이벤트 리스너들
+        updateIntervalSelect.addEventListener('change', (e) => {
+            updateInterval = parseInt(e.target.value);
+            if (isAutoUpdate) {
+                startAutoUpdate();
             }
         });
 
-        // Enter 키로 값 변경
-        document.getElementById('myVariable2Input').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                writeVariable();
+        toggleUpdateBtn.addEventListener('click', () => {
+            isAutoUpdate = !isAutoUpdate;
+            
+            if (isAutoUpdate) {
+                toggleUpdateBtn.textContent = '⏸️ 자동 업데이트 중지';
+                toggleUpdateBtn.className = 'control-btn pause';
+                startAutoUpdate();
+            } else {
+                toggleUpdateBtn.textContent = '▶️ 자동 업데이트 시작';
+                toggleUpdateBtn.className = 'control-btn play';
+                if (updateTimer) {
+                    clearInterval(updateTimer);
+                    updateTimer = null;
+                }
+            }
+        });
+
+        manualRefreshBtn.addEventListener('click', () => {
+            loadDevices();
+            checkStatus();
+        });
+
+        // 페이지 초기화
+        document.addEventListener('DOMContentLoaded', () => {
+            checkStatus();
+            loadDevices();
+            startAutoUpdate();
+            
+            // 5초마다 연결 상태 확인
+            setInterval(checkStatus, 5000);
+        });
+
+        // 페이지가 보이지 않을 때 업데이트 빈도 조절
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && updateTimer) {
+                clearInterval(updateTimer);
+                updateTimer = setInterval(() => {
+                    loadDevices();
+                }, updateInterval * 3); // 3배 더 느리게
+            } else if (!document.hidden && isAutoUpdate) {
+                startAutoUpdate(); // 원래 속도로 복원
             }
         });
     </script>
