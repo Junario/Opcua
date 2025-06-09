@@ -31,6 +31,7 @@ const { OPCUAServer, Variant, DataType, DataValue, StatusCodes } = require("node
 
     var uaVariable1 = namespace.addVariable({
         componentOf: device,
+        nodeId: "ns=1;s=MyVariable1",
         browseName: "MyVariable1",
         dataType: "Double"
     });

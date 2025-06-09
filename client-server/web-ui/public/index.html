@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>간단한 OPC UA 모니터링</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .status {
+            padding: 10px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        
+        .status.connected {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status.disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .controls h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        
+        .control-group {
+            margin-bottom: 15px;
+        }
+        
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        .control-group input {
+            width: 200px;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .control-group button {
+            padding: 8px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 10px;
+        }
+        
+        .control-group button:hover {
+            background-color: #0056b3;
+        }
+        
+        .variables {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .variables h3 {
+            margin: 0;
+            padding: 15px 20px;
+            background-color: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+            color: #333;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th, td {
+            padding: 12px 20px;
+            text-align: left;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+            color: #495057;
+        }
+        
+        .value {
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+        }
+        
+        .quality-good {
+            color: #28a745;
+        }
+        
+        .quality-bad {
+            color: #dc3545;
+        }
+        
+        .refresh-btn {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+        
+        .refresh-btn:hover {
+            background-color: #218838;
+        }
+        
+        .message {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            display: none;
+        }
+        
+        .message.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .message.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .update-controls {
+            background: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .control-btn {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .control-btn.pause {
+            background-color: #ffc107;
+            color: #212529;
+        }
+
+        .control-btn.play {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .control-btn:hover {
+            opacity: 0.8;
+        }
+
+        .interval-selector {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .interval-selector select {
+            padding: 6px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+
+        .status-info {
+            font-size: 0.9rem;
+            color: #666;
+            margin-left: auto;
+        }
+
+        .last-update {
+            font-weight: bold;
+            color: #28a745;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>OPC UA 간단 모니터링</h1>
+        <div id="status" class="status disconnected">연결 확인 중...</div>
+    </div>
+
+    <div class="controls">
+        <h3>변수 제어</h3>
+        <div class="control-group">
+            <label for="myVariable2Input">MyVariable2 (문자열):</label>
+            <input type="text" id="myVariable2Input" placeholder="새 값 입력...">
+            <button onclick="writeVariable()">값 변경</button>
+        </div>
+        <div id="writeMessage" class="message"></div>
+    </div>
+
+    <div class="update-controls">
+        <button class="refresh-btn" onclick="loadVariables()">🔄 새로고침</button>
+        
+        <button id="autoUpdateToggle" class="control-btn pause" onclick="toggleAutoUpdate()">
+            ⏸️ 자동 업데이트 중지
+        </button>
+        
+        <div class="interval-selector">
+            <label for="intervalSelect">업데이트 간격:</label>
+            <select id="intervalSelect" onchange="changeUpdateInterval(this.value)">
+                <option value="1000">1초</option>
+                <option value="2000" selected>2초</option>
+                <option value="3000">3초</option>
+                <option value="5000">5초</option>
+                <option value="10000">10초</option>
+            </select>
+        </div>
+        
+        <div class="status-info">
+            <span>마지막 업데이트: </span>
+            <span id="lastUpdateTime" class="last-update">-</span>
+        </div>
+    </div>
+
+    <div class="variables">
+        <h3>변수 현황</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>변수명</th>
+                    <th>값</th>
+                    <th>타입</th>
+                    <th>품질</th>
+                    <th>업데이트 시간</th>
+                    <th>쓰기</th>
+                </tr>
+            </thead>
+            <tbody id="variablesTable">
+                <tr>
+                    <td colspan="6" style="text-align: center; color: #666;">데이터를 불러오는 중...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        let isConnected = false;
+
+        // 업데이트 간격 설정 (밀리초)
+        let updateInterval = 2000; // 2초마다 업데이트
+        let statusInterval = 5000; // 5초마다 상태 확인
+        let autoUpdateEnabled = true;
+        let updateTimer = null;
+        let statusTimer = null;
+
+        // 페이지 로드 시 초기화
+        window.onload = function() {
+            checkStatus();
+            loadVariables();
+            startAutoUpdate();
+        };
+
+        // 자동 업데이트 시작
+        function startAutoUpdate() {
+            if (updateTimer) clearInterval(updateTimer);
+            if (statusTimer) clearInterval(statusTimer);
+            
+            if (autoUpdateEnabled) {
+                updateTimer = setInterval(loadVariables, updateInterval);
+                statusTimer = setInterval(checkStatus, statusInterval);
+            }
+        }
+
+        // 자동 업데이트 중지
+        function stopAutoUpdate() {
+            if (updateTimer) clearInterval(updateTimer);
+            if (statusTimer) clearInterval(statusTimer);
+            updateTimer = null;
+            statusTimer = null;
+        }
+
+        // 업데이트 간격 변경
+        function changeUpdateInterval(newInterval) {
+            updateInterval = newInterval;
+            if (autoUpdateEnabled) {
+                startAutoUpdate();
+            }
+        }
+
+        // 자동 업데이트 토글
+        function toggleAutoUpdate() {
+            autoUpdateEnabled = !autoUpdateEnabled;
+            const toggleBtn = document.getElementById('autoUpdateToggle');
+            
+            if (autoUpdateEnabled) {
+                startAutoUpdate();
+                toggleBtn.textContent = '⏸️ 자동 업데이트 중지';
+                toggleBtn.className = 'control-btn pause';
+            } else {
+                stopAutoUpdate();
+                toggleBtn.textContent = '▶️ 자동 업데이트 시작';
+                toggleBtn.className = 'control-btn play';
+            }
+        }
+
+        // 연결 상태 확인
+        async function checkStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                isConnected = data.connected;
+                
+                const statusElement = document.getElementById('status');
+                if (isConnected) {
+                    statusElement.className = 'status connected';
+                    statusElement.textContent = '✅ OPC UA 서버 연결됨';
+                } else {
+                    statusElement.className = 'status disconnected';
+                    statusElement.textContent = '❌ OPC UA 서버 연결 안됨';
+                }
+            } catch (error) {
+                const statusElement = document.getElementById('status');
+                statusElement.className = 'status disconnected';
+                statusElement.textContent = '❌ 웹서버 연결 오류';
+            }
+        }
+
+        // 변수 데이터 로드
+        async function loadVariables() {
+            try {
+                const response = await fetch('/api/variables');
+                const data = await response.json();
+                
+                // 마지막 업데이트 시간 표시
+                updateLastUpdateTime();
+                
+                const tbody = document.getElementById('variablesTable');
+                
+                if (data.error) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="6" style="text-align: center; color: #dc3545;">
+                                ${data.error}
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+                
+                if (!data.variables || data.variables.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="6" style="text-align: center; color: #666;">
+                                변수 데이터가 없습니다.
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+                
+                tbody.innerHTML = data.variables.map(variable => `
+                    <tr>
+                        <td><strong>${variable.name}</strong></td>
+                        <td class="value">${formatValue(variable.value, variable.type)}</td>
+                        <td>${variable.type}</td>
+                        <td class="quality-${variable.quality.toLowerCase() === 'good' ? 'good' : 'bad'}">
+                            ${variable.quality}
+                        </td>
+                        <td>${variable.timestamp}</td>
+                        <td>${variable.writable ? '가능' : '불가'}</td>
+                    </tr>
+                `).join('');
+                
+            } catch (error) {
+                console.error('변수 로드 오류:', error);
+                document.getElementById('variablesTable').innerHTML = `
+                    <tr>
+                        <td colspan="6" style="text-align: center; color: #dc3545;">
+                            네트워크 오류: ${error.message}
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+
+        // 값 포맷팅
+        function formatValue(value, type) {
+            if (value === null || value === undefined) {
+                return 'N/A';
+            }
+            
+            if (type === 'Double' || type === 'Float') {
+                return Number(value).toFixed(2);
+            }
+            
+            return value.toString();
+        }
+
+        // 변수 쓰기
+        async function writeVariable() {
+            const input = document.getElementById('myVariable2Input');
+            const messageDiv = document.getElementById('writeMessage');
+            const value = input.value.trim();
+            
+            if (!value) {
+                showMessage('값을 입력해주세요.', 'error');
+                return;
+            }
+            
+            if (!isConnected) {
+                showMessage('OPC UA 서버에 연결되지 않았습니다.', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/write', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        nodeId: 'ns=1;b=1020FFAA',
+                        value: value,
+                        dataType: 'String'
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showMessage(result.message, 'success');
+                    input.value = '';
+                    // 즉시 새로고침
+                    loadVariables();
+                } else {
+                    showMessage(result.message, 'error');
+                }
+                
+            } catch (error) {
+                showMessage(`네트워크 오류: ${error.message}`, 'error');
+            }
+        }
+
+        // 메시지 표시
+        function showMessage(message, type) {
+            const messageDiv = document.getElementById('writeMessage');
+            messageDiv.textContent = message;
+            messageDiv.className = `message ${type}`;
+            messageDiv.style.display = 'block';
+            
+            // 5초 후 메시지 숨김
+            setTimeout(() => {
+                messageDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        // 마지막 업데이트 시간 표시
+        function updateLastUpdateTime() {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString();
+            const lastUpdateElement = document.getElementById('lastUpdateTime');
+            if (lastUpdateElement) {
+                lastUpdateElement.textContent = timeString;
+            }
+        }
+
+        // 페이지 가시성 변경 시 자동 업데이트 제어
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                // 페이지가 숨겨지면 업데이트 간격을 늘림
+                if (autoUpdateEnabled && updateInterval < 10000) {
+                    changeUpdateInterval(10000);
+                }
+            } else {
+                // 페이지가 다시 보이면 원래 간격으로 복원
+                const selectedInterval = document.getElementById('intervalSelect').value;
+                changeUpdateInterval(parseInt(selectedInterval));
+            }
+        });
+
+        // Enter 키로 값 변경
+        document.getElementById('myVariable2Input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                writeVariable();
+            }
+        });
+    </script>
+</body>
+</html> 
