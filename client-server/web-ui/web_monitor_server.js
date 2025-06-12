@@ -15,6 +15,10 @@ const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
+// 히스토리 데이터 저장소 (메모리 기반)
+const historyData = new Map(); // 변수별 히스토리 데이터
+const MAX_HISTORY_POINTS = 100; // 최대 데이터 포인트 수
+
 // OPC UA 클라이언트 설정
 const client = OPCUAClient.create({
     applicationName: "SimpleWebUIClient",
@@ -44,9 +48,48 @@ async function connectToOPCUA() {
     }
 }
 
+// 히스토리 데이터 저장 함수
+function saveHistoryData(nodeId, value, timestamp) {
+    if (!historyData.has(nodeId)) {
+        historyData.set(nodeId, []);
+    }
+    
+    const history = historyData.get(nodeId);
+    history.push({
+        value: value,
+        timestamp: timestamp
+    });
+    
+    // 최대 포인트 수 제한
+    if (history.length > MAX_HISTORY_POINTS) {
+        history.shift(); // 가장 오래된 데이터 제거
+    }
+}
+
 // API: 연결 상태 확인
 app.get('/api/status', (req, res) => {
     res.json({ connected: isConnected });
+});
+
+// API: 히스토리 데이터 조회
+app.get('/api/history/:nodeId', (req, res) => {
+    const nodeId = req.params.nodeId;
+    const history = historyData.get(nodeId) || [];
+    
+    res.json({
+        nodeId: nodeId,
+        data: history
+    });
+});
+
+// API: 모든 변수의 히스토리 데이터 조회
+app.get('/api/history', (req, res) => {
+    const allHistory = {};
+    historyData.forEach((data, nodeId) => {
+        allHistory[nodeId] = data;
+    });
+    
+    res.json(allHistory);
 });
 
 // API: 모든 변수 읽기
@@ -126,11 +169,19 @@ app.get('/api/variables', async (req, res) => {
                         displayValue = typeof displayValue === 'number' ? displayValue.toFixed(1) : displayValue;
                     }
                     
+                    // 히스토리 데이터 저장 (숫자형 데이터만)
+                    const timestamp = new Date();
+                    if (variable.type === "Double" && typeof dataValue.value.value === 'number') {
+                        saveHistoryData(variable.nodeId, dataValue.value.value, timestamp);
+                    } else if (variable.type === "Boolean") {
+                        saveHistoryData(variable.nodeId, dataValue.value.value ? 1 : 0, timestamp);
+                    }
+                    
                     deviceData.variables.push({
                         ...variable,
                         value: dataValue.value.value,
                         displayValue: displayValue,
-                        timestamp: new Date().toLocaleString(),
+                        timestamp: timestamp.toLocaleString(),
                         quality: dataValue.statusCode.name || 'Good'
                     });
                 } catch (error) {

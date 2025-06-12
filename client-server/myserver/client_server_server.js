@@ -7,7 +7,7 @@ const { OPCUAServer, Variant, DataType, DataValue, StatusCodes } = require("node
         resourcePath: "/UA/MyLittleServer",
         buildInfo: {
             productName: "4DevicesHistoryServer",
-            buildNumber: "2.0.0",
+            buildNumber: "2.1.0",
             buildDate: new Date()
         }
     });
@@ -20,33 +20,89 @@ const { OPCUAServer, Variant, DataType, DataValue, StatusCodes } = require("node
     // History 데이터 저장소 (메모리 기반)
     const historyStorage = {};
 
-    // History Read Service Provider 구현
-    server.historyRead = function(context, historyReadDetails, indexRange, dataEncoding, continuationPoint) {
-        console.log("📊 History Read 요청 받음:", historyReadDetails.nodesToRead?.length || 0, "개 노드");
+    // 개선된 History Read Service Provider 구현
+    server.historyRead = function(context, historyReadDetails, indexRange, dataEncoding, continuationPoint, callback) {
+        console.log("📊 History Read 요청 받음");
+        console.log("📋 요청 상세:", {
+            nodesToRead: historyReadDetails.nodesToRead?.length || 0,
+            startTime: historyReadDetails.startTime,
+            endTime: historyReadDetails.endTime,
+            numValuesPerNode: historyReadDetails.numValuesPerNode
+        });
         
-        const nodesToRead = historyReadDetails.nodesToRead;
-        const results = [];
-        
-        for (const nodeToRead of nodesToRead) {
-            const nodeId = nodeToRead.nodeId.toString();
-            const historyData = historyStorage[nodeId] || [];
+        try {
+            const nodesToRead = historyReadDetails.nodesToRead || [];
+            const results = [];
             
-            console.log(`📈 ${nodeId}: ${historyData.length}개 히스토리 포인트 반환`);
-            
-            // 최근 100개 데이터 포인트 반환 (UaExpert 차트용)
-            const recentData = historyData.slice(-100);
-            
-            results.push({
-                statusCode: StatusCodes.Good,
-                historyData: {
-                    dataValues: recentData
+            for (const nodeToRead of nodesToRead) {
+                const nodeId = nodeToRead.nodeId.toString();
+                const historyData = historyStorage[nodeId] || [];
+                
+                console.log(`📈 ${nodeId}: ${historyData.length}개 히스토리 포인트 처리`);
+                
+                if (historyData.length === 0) {
+                    console.log(`⚠️ ${nodeId}: 히스토리 데이터 없음`);
+                    results.push({
+                        statusCode: StatusCodes.BadNoData,
+                        historyData: {
+                            dataValues: []
+                        }
+                    });
+                    continue;
                 }
-            });
+                
+                // 시간 범위 필터링
+                let filteredData = historyData;
+                if (historyReadDetails.startTime && historyReadDetails.endTime) {
+                    const startTime = new Date(historyReadDetails.startTime);
+                    const endTime = new Date(historyReadDetails.endTime);
+                    
+                    filteredData = historyData.filter(item => {
+                        const timestamp = new Date(item.sourceTimestamp);
+                        return timestamp >= startTime && timestamp <= endTime;
+                    });
+                    
+                    console.log(`🕐 시간 필터링 결과: ${filteredData.length}개 포인트`);
+                }
+                
+                // 최대 개수 제한
+                const maxValues = historyReadDetails.numValuesPerNode || 100;
+                const resultData = filteredData.slice(-maxValues);
+                
+                console.log(`✅ ${nodeId}: ${resultData.length}개 포인트 반환`);
+                
+                results.push({
+                    statusCode: StatusCodes.Good,
+                    historyData: {
+                        dataValues: resultData
+                    }
+                });
+            }
+            
+            // 콜백 방식으로 결과 반환
+            if (callback) {
+                callback(null, {
+                    results: results
+                });
+            } else {
+                return {
+                    results: results
+                };
+            }
+            
+        } catch (error) {
+            console.error("❌ History Read 에러:", error);
+            if (callback) {
+                callback(error);
+            } else {
+                return {
+                    results: [{
+                        statusCode: StatusCodes.BadInternalError,
+                        historyData: { dataValues: [] }
+                    }]
+                };
+            }
         }
-        
-        return {
-            results: results
-        };
     };
 
     // 4개 장비 생성
@@ -62,8 +118,8 @@ const { OPCUAServer, Variant, DataType, DataValue, StatusCodes } = require("node
         const deviceName = `Device${i}`;
         
         // 장비 객체 생성
-    const device = namespace.addObject({
-        organizedBy: addressSpace.rootFolder.objects,
+        const device = namespace.addObject({
+            organizedBy: addressSpace.rootFolder.objects,
             browseName: deviceName,
             displayName: `가상장비 ${i}`
         });
@@ -78,7 +134,7 @@ const { OPCUAServer, Variant, DataType, DataValue, StatusCodes } = require("node
             historizing: true,                          // ✅ History 기능 활성화
             accessLevel: "CurrentRead | HistoryRead",   // ✅ History 읽기 권한
             userAccessLevel: "CurrentRead | HistoryRead", // ✅ 사용자 권한
-            minimumSamplingInterval: 1000,              // ✅ 최소 1초 간격
+            minimumSamplingInterval: 100,               // ✅ 최소 100ms 간격
             value: { dataType: DataType.Double, value: deviceData[deviceName].temp }
         });
 
@@ -92,13 +148,13 @@ const { OPCUAServer, Variant, DataType, DataValue, StatusCodes } = require("node
             historizing: true,                          // ✅ History 기능 활성화
             accessLevel: "CurrentRead | CurrentWrite | HistoryRead", // ✅ 모든 권한
             userAccessLevel: "CurrentRead | CurrentWrite | HistoryRead", // ✅ 사용자 권한
-            minimumSamplingInterval: 1000,              // ✅ 최소 1초 간격
+            minimumSamplingInterval: 100,               // ✅ 최소 100ms 간격
             value: { dataType: DataType.Boolean, value: deviceData[deviceName].power }
         });
 
         // 전압 변수 (History 완전 지원)
         const voltage = namespace.addVariable({
-        componentOf: device,
+            componentOf: device,
             nodeId: `ns=1;s=${deviceName}_Voltage`,
             browseName: "Voltage",
             displayName: "전압 (V)",
@@ -106,13 +162,13 @@ const { OPCUAServer, Variant, DataType, DataValue, StatusCodes } = require("node
             historizing: true,                          // ✅ History 기능 활성화
             accessLevel: "CurrentRead | HistoryRead",   // ✅ History 읽기 권한
             userAccessLevel: "CurrentRead | HistoryRead", // ✅ 사용자 권한
-            minimumSamplingInterval: 1000,              // ✅ 최소 1초 간격
+            minimumSamplingInterval: 100,               // ✅ 최소 100ms 간격
             value: { dataType: DataType.Double, value: deviceData[deviceName].voltage }
         });
 
         // 전류 변수 (History 완전 지원)
         const current = namespace.addVariable({
-        componentOf: device,
+            componentOf: device,
             nodeId: `ns=1;s=${deviceName}_Current`,
             browseName: "Current",
             displayName: "전류 (A)",
@@ -120,7 +176,7 @@ const { OPCUAServer, Variant, DataType, DataValue, StatusCodes } = require("node
             historizing: true,                          // ✅ History 기능 활성화
             accessLevel: "CurrentRead | HistoryRead",   // ✅ History 읽기 권한
             userAccessLevel: "CurrentRead | HistoryRead", // ✅ 사용자 권한
-            minimumSamplingInterval: 1000,              // ✅ 최소 1초 간격
+            minimumSamplingInterval: 100,               // ✅ 최소 100ms 간격
             value: { dataType: DataType.Double, value: deviceData[deviceName].current }
         });
 
@@ -139,11 +195,11 @@ const { OPCUAServer, Variant, DataType, DataValue, StatusCodes } = require("node
         console.log(`✅ ${deviceName} 생성 완료 (History 완전 지원)`);
     }
 
-    // 초기 History 데이터 생성 (최근 데이터 제공용)
+    // 초기 History 데이터 생성 (더 많은 데이터 포인트)
     console.log("🔄 초기 History 데이터 생성 중...");
     const currentTime = new Date();
-    for (let i = 0; i < 50; i++) {
-        const timestamp = new Date(currentTime.getTime() - (50 - i) * 2000); // 2초 간격으로 과거 데이터
+    for (let i = 0; i < 180; i++) { // 3분 * 60초 = 180개 포인트
+        const timestamp = new Date(currentTime.getTime() - (180 - i) * 1000); // 1초 간격으로 과거 데이터
         
         devices.forEach(device => {
             const createHistoryValue = (value, dataType) => ({
@@ -153,9 +209,12 @@ const { OPCUAServer, Variant, DataType, DataValue, StatusCodes } = require("node
                 serverTimestamp: timestamp
             });
 
-            // 초기 값들로 히스토리 생성
+            // 초기 값들로 히스토리 생성 (더 현실적인 패턴)
+            const tempBase = device.data.temp;
+            const tempVariation = Math.sin(i * 0.1) * 3 + (Math.random() - 0.5) * 2;
+            
             historyStorage[device.variables.temperature.nodeId.toString()].push(
-                createHistoryValue(device.data.temp + (Math.random() - 0.5) * 5, DataType.Double)
+                createHistoryValue(tempBase + tempVariation, DataType.Double)
             );
             historyStorage[device.variables.power.nodeId.toString()].push(
                 createHistoryValue(device.data.power, DataType.Boolean)
@@ -252,6 +311,12 @@ const { OPCUAServer, Variant, DataType, DataValue, StatusCodes } = require("node
                 }
             });
         });
+        
+        // 히스토리 상태 로그 (30초마다)
+        if (Date.now() % 30000 < 1000) {
+            const totalPoints = Object.values(historyStorage).reduce((sum, arr) => sum + arr.length, 0);
+            console.log(`📊 히스토리 저장 상태: 총 ${totalPoints}개 데이터 포인트`);
+        }
     }, 1000);
 
     // 서버 종료시 정리
@@ -273,12 +338,12 @@ const { OPCUAServer, Variant, DataType, DataValue, StatusCodes } = require("node
         console.log("⚡ 작동상태(Power)만 제어 가능, 나머지는 모니터링 전용");
         console.log("🔄 실시간 시뮬레이션 실행 중...");
         console.log("📊 History 데이터 자동 저장 중 (UaExpert History Trend View 지원)");
-        console.log("🔍 History Read Service 완전 활성화");
-        console.log("📈 초기 History 데이터 50개 포인트 준비됨");
+        console.log("🔍 개선된 History Read Service 활성화");
+        console.log("📈 초기 History 데이터 180개 포인트 준비됨 (3분간)");
         console.log("\n💡 UaExpert History Trend View 사용법:");
         console.log("   1. Device1~4 확장 → 개별 변수 선택");
         console.log("   2. 변수를 History Trend View로 드래그&드롭");
-        console.log("   3. 시간 범위 설정 후 Read History 실행");
+        console.log("   3. 시간 범위: 최근 3분, Update 실행");
         console.log("\n🛑 서버 중지: Ctrl+C");
     });
 })();

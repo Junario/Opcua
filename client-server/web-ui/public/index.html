@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>4개 가상장비 OPC UA 모니터링</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@2.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -257,6 +259,96 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
+        /* 히스토리 그래프 스타일 */
+        .history-section {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin: 25px 0;
+            overflow: hidden;
+        }
+
+        .history-header {
+            background: linear-gradient(135deg, #43a047 0%, #388e3c 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .history-header h2 {
+            margin: 0;
+            font-size: 1.5em;
+            font-weight: 600;
+        }
+
+        .history-controls {
+            padding: 20px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .chart-toggle-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+            background-color: #2196f3;
+            color: white;
+        }
+
+        .chart-toggle-btn:hover {
+            background-color: #1976d2;
+            transform: translateY(-1px);
+        }
+
+        .chart-toggle-btn.active {
+            background-color: #4caf50;
+        }
+
+        .variable-selector {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .variable-selector select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+
+        .charts-container {
+            padding: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+        }
+
+        .chart-card {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            background: #fafafa;
+        }
+
+        .chart-title {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        .chart-canvas {
+            width: 100% !important;
+            height: 300px !important;
+        }
+
         /* 반응형 디자인 */
         @media (max-width: 768px) {
             .devices-grid {
@@ -270,6 +362,19 @@
             
             .control-group {
                 justify-content: center;
+            }
+
+            .history-controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .charts-container {
+                grid-template-columns: 1fr;
+            }
+
+            .chart-canvas {
+                height: 250px !important;
             }
         }
     </style>
@@ -311,6 +416,34 @@
         <!-- 장비 카드들이 여기에 동적으로 생성됩니다 -->
     </div>
 
+    <!-- 히스토리 그래프 섹션 -->
+    <div class="history-section">
+        <div class="history-header">
+            <h2>📊 History Trend View - 변수 히스토리 그래프</h2>
+        </div>
+        
+        <div class="history-controls">
+            <button id="toggleCharts" class="chart-toggle-btn">📈 그래프 표시/숨기기</button>
+            
+            <div class="variable-selector">
+                <label>표시할 변수 유형:</label>
+                <select id="variableTypeFilter">
+                    <option value="all">모든 변수</option>
+                    <option value="Temperature">온도</option>
+                    <option value="Voltage">전압</option>
+                    <option value="Current">전류</option>
+                    <option value="Power">작동상태</option>
+                </select>
+            </div>
+            
+            <button id="refreshCharts" class="chart-toggle-btn">🔄 그래프 새로고침</button>
+        </div>
+        
+        <div id="chartsContainer" class="charts-container" style="display: none;">
+            <!-- 차트들이 여기에 동적으로 생성됩니다 -->
+        </div>
+    </div>
+
     <div id="lastUpdate" class="timestamp">
         마지막 업데이트: 대기 중...
     </div>
@@ -328,6 +461,17 @@
         const updateIntervalSelect = document.getElementById('updateInterval');
         const toggleUpdateBtn = document.getElementById('toggleUpdate');
         const manualRefreshBtn = document.getElementById('manualRefresh');
+        
+        // 차트 관련 요소들
+        const toggleChartsBtn = document.getElementById('toggleCharts');
+        const chartsContainer = document.getElementById('chartsContainer');
+        const variableTypeFilter = document.getElementById('variableTypeFilter');
+        const refreshChartsBtn = document.getElementById('refreshCharts');
+        
+        // 차트 관리 변수들
+        let isChartsVisible = false;
+        let charts = new Map(); // nodeId -> Chart 객체
+        let currentDevices = [];
 
         // 연결 상태 확인
         async function checkStatus() {
@@ -361,7 +505,13 @@
                 }
 
                 renderDevices(data.devices);
+                currentDevices = data.devices; // 차트 업데이트를 위해 저장
                 lastUpdateEl.textContent = `마지막 업데이트: ${new Date().toLocaleString()}`;
+                
+                // 차트가 표시 중이면 업데이트
+                if (isChartsVisible) {
+                    updateCharts();
+                }
                 
             } catch (error) {
                 showMessage(`데이터 로드 오류: ${error.message}`, 'error');
@@ -452,6 +602,183 @@
             }, 3000);
         }
 
+        // 히스토리 데이터 가져오기
+        async function loadHistoryData(nodeId) {
+            try {
+                const response = await fetch(`/api/history/${encodeURIComponent(nodeId)}`);
+                const data = await response.json();
+                return data.data || [];
+            } catch (error) {
+                console.error(`Error loading history for ${nodeId}:`, error);
+                return [];
+            }
+        }
+
+        // 차트 생성
+        function createChart(canvasId, nodeId, variable) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            
+            const chartConfig = {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: `${variable.displayName} (${variable.unit})`,
+                        data: [],
+                        borderColor: getVariableColor(variable.name),
+                        backgroundColor: getVariableColor(variable.name, 0.1),
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 3,
+                        pointHoverRadius: 5
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: variable.displayName
+                        },
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                displayFormats: {
+                                    minute: 'HH:mm',
+                                    second: 'HH:mm:ss'
+                                }
+                            },
+                            title: {
+                                display: true,
+                                text: '시간'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: `${variable.displayName} (${variable.unit})`
+                            },
+                            beginAtZero: variable.name === 'Power' // Boolean 변수는 0부터 시작
+                        }
+                    },
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    }
+                }
+            };
+
+            const chart = new Chart(ctx, chartConfig);
+            charts.set(nodeId, chart);
+            return chart;
+        }
+
+        // 변수별 색상 정의
+        function getVariableColor(variableName, alpha = 1) {
+            const colors = {
+                'Temperature': `rgba(255, 99, 132, ${alpha})`,
+                'Power': `rgba(54, 162, 235, ${alpha})`,
+                'Voltage': `rgba(255, 205, 86, ${alpha})`,
+                'Current': `rgba(75, 192, 192, ${alpha})`
+            };
+            return colors[variableName] || `rgba(153, 102, 255, ${alpha})`;
+        }
+
+        // 차트 표시/숨기기
+        async function toggleCharts() {
+            isChartsVisible = !isChartsVisible;
+            
+            if (isChartsVisible) {
+                chartsContainer.style.display = 'grid';
+                toggleChartsBtn.textContent = '📈 그래프 숨기기';
+                toggleChartsBtn.classList.add('active');
+                await renderCharts();
+            } else {
+                chartsContainer.style.display = 'none';
+                toggleChartsBtn.textContent = '📈 그래프 표시';
+                toggleChartsBtn.classList.remove('active');
+                // 기존 차트들 정리
+                charts.forEach(chart => chart.destroy());
+                charts.clear();
+            }
+        }
+
+        // 차트 렌더링
+        async function renderCharts() {
+            if (!currentDevices.length) return;
+
+            chartsContainer.innerHTML = '';
+            
+            // 기존 차트들 정리
+            charts.forEach(chart => chart.destroy());
+            charts.clear();
+
+            const selectedType = variableTypeFilter.value;
+
+            for (const device of currentDevices) {
+                for (const variable of device.variables) {
+                    // 필터 적용
+                    if (selectedType !== 'all' && variable.name !== selectedType) {
+                        continue;
+                    }
+
+                    // 숫자형 변수만 차트로 표시
+                    if (variable.type === 'Double' || variable.name === 'Power') {
+                        const chartCard = document.createElement('div');
+                        chartCard.className = 'chart-card';
+                        
+                        const canvasId = `chart_${device.name}_${variable.name}`;
+                        chartCard.innerHTML = `
+                            <div class="chart-title">${device.displayName} - ${variable.displayName}</div>
+                            <canvas id="${canvasId}" class="chart-canvas"></canvas>
+                        `;
+                        
+                        chartsContainer.appendChild(chartCard);
+                        
+                        // 차트 생성
+                        const chart = createChart(canvasId, variable.nodeId, variable);
+                        
+                        // 히스토리 데이터 로드
+                        const historyData = await loadHistoryData(variable.nodeId);
+                        updateChartData(chart, historyData);
+                    }
+                }
+            }
+        }
+
+        // 차트 데이터 업데이트
+        function updateChartData(chart, historyData) {
+            const labels = historyData.map(point => new Date(point.timestamp));
+            const data = historyData.map(point => point.value);
+            
+            chart.data.labels = labels;
+            chart.data.datasets[0].data = data;
+            chart.update();
+        }
+
+        // 모든 차트 업데이트
+        async function updateCharts() {
+            if (!isChartsVisible || charts.size === 0) return;
+
+            for (const device of currentDevices) {
+                for (const variable of device.variables) {
+                    const chart = charts.get(variable.nodeId);
+                    if (chart) {
+                        const historyData = await loadHistoryData(variable.nodeId);
+                        updateChartData(chart, historyData);
+                    }
+                }
+            }
+        }
+
         // 자동 업데이트 관리
         function startAutoUpdate() {
             if (updateTimer) {
@@ -497,6 +824,21 @@
             checkStatus();
         });
 
+        // 차트 관련 이벤트 리스너들
+        toggleChartsBtn.addEventListener('click', toggleCharts);
+        
+        variableTypeFilter.addEventListener('change', () => {
+            if (isChartsVisible) {
+                renderCharts();
+            }
+        });
+
+        refreshChartsBtn.addEventListener('click', () => {
+            if (isChartsVisible) {
+                updateCharts();
+            }
+        });
+
         // 페이지 초기화
         document.addEventListener('DOMContentLoaded', () => {
             checkStatus();
@@ -520,4 +862,4 @@
         });
     </script>
 </body>
-</html> 
+</html>
