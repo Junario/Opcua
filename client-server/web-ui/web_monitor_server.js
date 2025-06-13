@@ -25,7 +25,8 @@ const client = OPCUAClient.create({
     connectionStrategy: { initialDelay: 1000, maxRetry: 1 },
     securityMode: MessageSecurityMode.None,
     securityPolicy: SecurityPolicy.None,
-    endpointMustExist: false
+    endpointMustExist: false,
+    applicationUri: "urn:pollux-min-acer:MyClient"  // 인증서의 subjectAltName과 일치하도록 설정
 });
 
 const endpointUrl = "opc.tcp://" + require("os").hostname() + ":4334/UA/MyLittleServer";
@@ -35,15 +36,13 @@ let isConnected = false;
 // OPC UA 연결 함수
 async function connectToOPCUA() {
     try {
-        console.log('OPC UA 서버 연결 시도...');
         await client.connect(endpointUrl);
         session = await client.createSession();
         isConnected = true;
-        console.log('OPC UA 서버 연결 성공!');
+        console.log('OPC UA 서버 연결 성공');
     } catch (error) {
         console.error('OPC UA 연결 실패:', error.message);
         isConnected = false;
-        // 10초 후 재시도
         setTimeout(connectToOPCUA, 10000);
     }
 }
@@ -71,7 +70,13 @@ app.get('/api/status', (req, res) => {
     res.json({ connected: isConnected });
 });
 
-// API: 히스토리 데이터 조회
+// API: 히스토리 데이터 초기화 (더 구체적인 경로를 먼저 배치)
+app.post('/api/history/reset', (req, res) => {
+    historyData.clear();
+    res.json({ success: true, message: '히스토리 데이터가 초기화되었습니다.' });
+});
+
+// API: 특정 노드의 히스토리 데이터 조회
 app.get('/api/history/:nodeId', (req, res) => {
     const nodeId = req.params.nodeId;
     const history = historyData.get(nodeId) || [];
@@ -267,10 +272,8 @@ app.post('/api/write', async (req, res) => {
 const PORT = 3000;
 
 app.listen(PORT, () => {
-    console.log(`\n=== 간단한 OPC UA 웹 UI ===`);
+    console.log(`\n=== OPC UA 웹 UI 서버 ===`);
     console.log(`서버 실행: http://localhost:${PORT}`);
-    console.log(`브라우저에서 위 주소로 접속하세요.\n`);
     
-    // 2초 후 OPC UA 연결 시도
     setTimeout(connectToOPCUA, 2000);
 }); 

@@ -833,9 +833,37 @@
             }
         });
 
-        refreshChartsBtn.addEventListener('click', () => {
+        refreshChartsBtn.addEventListener('click', async () => {
             if (isChartsVisible) {
-                updateCharts();
+                try {
+                    // 서버의 히스토리 데이터 초기화
+                    const resetResponse = await fetch('/api/history/reset', {
+                        method: 'POST'
+                    });
+                    const resetResult = await resetResponse.json();
+                    
+                    if (resetResult.success) {
+                        // 기존 차트들 정리
+                        charts.forEach(chart => chart.destroy());
+                        charts.clear();
+                        
+                        // chartsContainer 내용 완전히 비우기
+                        chartsContainer.innerHTML = '';
+                        
+                        // 현재 데이터 다시 로드
+                        await loadDevices();
+                        
+                        // 차트 다시 렌더링
+                        await renderCharts();
+                        
+                        showMessage('그래프가 초기화되었습니다.', 'success');
+                    } else {
+                        showMessage('그래프 초기화 실패', 'error');
+                    }
+                } catch (error) {
+                    console.error('그래프 초기화 중 오류:', error);
+                    showMessage('그래프 초기화 중 오류가 발생했습니다.', 'error');
+                }
             }
         });
 
